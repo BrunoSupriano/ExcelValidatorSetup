@@ -1,5 +1,6 @@
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem, QHeaderView, QPushButton, QHBoxLayout
+from PySide6.QtGui import QColor
 from PySide6.QtCore import Signal
 from ..components.glass_card import GlassCard
 from ..theme import Theme
@@ -7,6 +8,7 @@ from ..theme import Theme
 class ValidationView(QWidget):
     back_requested = Signal()
     process_requested = Signal()
+    ignore_errors_requested = Signal()
 
     def __init__(self):
         super().__init__()
@@ -52,6 +54,11 @@ class ValidationView(QWidget):
         self.btn_back = QPushButton("← Voltar")
         self.btn_back.setObjectName("SecondaryButton")
         self.btn_back.clicked.connect(self.back_requested.emit)
+        
+        self.btn_ignore = QPushButton("Ignorar Erros e Prosseguir")
+        self.btn_ignore.setStyleSheet(f"background-color: {Theme.WARNING}; color: #222; font-weight: bold;")
+        self.btn_ignore.clicked.connect(self.ignore_errors_requested.emit)
+        self.btn_ignore.setVisible(False)
 
         self.btn_process = QPushButton("Processar Dados →")
         self.btn_process.clicked.connect(self.process_requested.emit)
@@ -59,6 +66,7 @@ class ValidationView(QWidget):
 
         btn_layout.addWidget(self.btn_back)
         btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_ignore)
         btn_layout.addWidget(self.btn_process)
         self.card.layout.addLayout(btn_layout)
 
@@ -80,12 +88,17 @@ class ValidationView(QWidget):
 
             if err.severity == "critical":
                 critical_count += 1
+        
+        # Reset visibility
+        self.btn_ignore.setVisible(False)
 
         if critical_count > 0:
             self.lbl_status.setText(f"Encontrados {critical_count} erros críticos. Corrija os arquivos para continuar.")
             self.lbl_status.setStyleSheet(f"color: {Theme.ERROR};")
             self.btn_process.setEnabled(False)
             self.btn_process.setStyleSheet("background-color: #444;")
+            
+            self.btn_ignore.setVisible(True)
         elif not errors:
             self.lbl_status.setText("Todos os arquivos estão válidos!")
             self.lbl_status.setStyleSheet(f"color: {Theme.SUCCESS};")

@@ -63,4 +63,8 @@ class Processor:
                 lambda x: 'DENTRO DO PRAZO' if x >= 0 else 'FORA DO PRAZO'
             )
             
+        # 5. Cleanup unwanted columns
+        cols_to_drop = ['Linha selecionada', 'Status Nota de Serviço']
+        df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
+            
         return df

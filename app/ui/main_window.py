@@ -86,10 +86,14 @@ class MainWindow(QMainWindow):
         self.import_view.next_step_requested.connect(self.start_validation)
         self.validation_view.back_requested.connect(lambda: self.content_area.setCurrentIndex(0))
         self.validation_view.process_requested.connect(self.start_processing)
+        self.validation_view.ignore_errors_requested.connect(self.on_ignore_errors)
+        self.validation_view.ignore_errors_requested.connect(self.on_ignore_errors)
         self.processing_view.reset_requested.connect(self.reset_app)
+        self.processing_view.save_requested.connect(self.start_save)
         
         # State
         self.loaded_dfs = {}
+        self.last_errors = []
 
     def toggle_maximize(self):
         if self.isMaximized():
@@ -105,6 +109,44 @@ class MainWindow(QMainWindow):
              self.move(event.globalPosition().toPoint() - self.drag_pos)
         super().mouseMoveEvent(event)
         
+    def start_save(self, df, path):
+        """Starts saving in background."""
+        from .components.loading_dialog import LoadingDialog
+        self.loading_dialog = LoadingDialog(self)
+        self.loading_dialog.set_progress(0, "Preparando gravação...")
+        self.loading_dialog.show()
+        
+        # We reuse the Worker class
+        # Worker(task_func, *args)
+        # task_func signature: (progress_callback, *args)
+        
+        self.save_worker = Worker(self._save_task, df, path)
+        self.save_worker.finished.connect(self.on_save_finished)
+        self.save_worker.error.connect(self.on_error)
+        self.save_worker.progress.connect(self.update_loading_progress)
+        self.save_worker.start()
+        
+    def _save_task(self, progress_callback, df, path):
+         # Pass callback to handler for real progress
+         from ..core.excel_handler import ExcelHandler
+         ExcelHandler.save_excel(df, path, progress_callback)
+         return path # Return path for opening
+         
+    def on_save_finished(self, result_path):
+        if hasattr(self, 'loading_dialog'):
+            self.loading_dialog.close()
+            
+        # Show Custom Success Dialog
+        from .components.success_dialog import SuccessDialog
+        import os
+        
+        dialog = SuccessDialog(self, result_path)
+        if dialog.exec(): # Accepted (Open File)
+            try:
+                os.startfile(result_path)
+            except Exception as e:
+                print(f"Error opening file: {e}")
+
     # Logic Flow
     def start_validation(self, file_paths):
         # Validation View Loading State
@@ -138,8 +180,9 @@ class MainWindow(QMainWindow):
                 if path_obj.exists():
                      total_size_bytes += path_obj.stat().st_size
                 
+                print(f"Loading '{path}' (Name: {path_obj.name})") # DEBUG
                 df = pd.read_excel(path_obj, engine='openpyxl')
-                dfs[path_obj.name] = df
+                dfs[str(path)] = df # Use full path as key to avoid collisions
             except Exception as e:
                 print(f"Skipping {path}: {e}")
         
@@ -171,6 +214,7 @@ class MainWindow(QMainWindow):
             self.loading_dialog.close()
             
         self.loaded_dfs, errors, total_size = result
+        self.last_errors = errors # Store for ignore processing
         self.total_input_size_mb = total_size / (1024 * 1024)
         
         # Setup Validation View
@@ -179,6 +223,35 @@ class MainWindow(QMainWindow):
         else:
             self.validation_view.set_errors(errors)
             self.content_area.setCurrentIndex(1)
+        
+    def on_ignore_errors(self):
+        """Removes files with critical errors and proceeds with the rest."""
+        if not self.last_errors:
+            self.start_processing()
+            return
+            
+        # Identify files to remove
+        files_to_remove = set()
+        for err in self.last_errors:
+            if err.severity == "critical" and err.full_path:
+                files_to_remove.add(err.full_path)
+        
+        # Remove from loaded_dfs
+        if files_to_remove:
+            print(f"Removing invalid files: {files_to_remove}")
+            for path in files_to_remove:
+                if path in self.loaded_dfs:
+                    del self.loaded_dfs[path]
+        
+        # Check if anything remains
+        if not self.loaded_dfs:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Sem arquivos", "Todos os arquivos selecionados contêm erros críticos e foram removidos.")
+            self.content_area.setCurrentIndex(0) # Go back to import
+            return
+            
+        # Proceed with valid files
+        self.start_processing()
         
     def start_processing(self):
         # Loading State (Overlay)

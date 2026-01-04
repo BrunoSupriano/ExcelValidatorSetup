@@ -58,6 +58,7 @@ class GroupCard(QFrame):
 
 class ProcessingView(QWidget):
     reset_requested = Signal()
+    save_requested = Signal(object, str) # df, path
     
     def __init__(self):
         super().__init__()
@@ -93,7 +94,7 @@ class ProcessingView(QWidget):
         # Close Animation UI initially
         self.success_container.setVisible(False)
         self.card.layout.addWidget(self.success_container)
-
+        
         # -- LOADING/PROCESSING STATE UI --
         self.loading_container = QWidget()
         vbox_loading = QVBoxLayout(self.loading_container)
@@ -241,8 +242,4 @@ class ProcessingView(QWidget):
         
         path, _ = QFileDialog.getSaveFileName(self, "Salvar", default_name, "Excel Files (*.xlsx)")
         if path:
-            try:
-                from ...core.excel_handler import ExcelHandler
-                ExcelHandler.save_excel(self.final_df, path)
-            except Exception as e:
-                pass
+            self.save_requested.emit(self.final_df, path)
